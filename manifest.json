@@ -1,0 +1,20 @@
+{
+  "name": "TeamTaskPro",
+  "version": "1.0",
+  "description": "Smart Task Management Bot",
+  "type": "bot",
+  "bots": [
+    {
+      "name": "TaskBot",
+      "description": "Handles task commands",
+      "handler": "bot/taskbot.js"
+    }
+  ],
+  "widgets": [
+    {
+      "name": "Dashboard",
+      "type": "web",
+      "url": "/widget/dashboard.html"
+    }
+  ]
+}
