@@ -11,7 +11,6 @@ app.use(bodyParser.json());
 // Serve widget files
 app.use("/widget", express.static(__dirname + "/widget"));
 
-
 // ------------------------------------------------------------
 // 1️⃣  BOT ENDPOINT FOR ZOHO CLIQ (Incoming Webhook Handler)
 // ------------------------------------------------------------
@@ -27,7 +26,6 @@ app.post("/bot", async (req, res) => {
 
     const message =
       body.text || body.message || body.command || "";
-
 
     const sender =
       body.user_name ||
@@ -46,6 +44,12 @@ app.post("/bot", async (req, res) => {
   }
 });
 
+// ------------------------------------------------------------
+//    NEW: FRIENDLY GET ENDPOINT FOR /bot
+// ------------------------------------------------------------
+app.get("/bot", (req, res) => {
+  res.send("This endpoint is for Zoho Cliq bot POST requests only. Please use the bot in Zoho Cliq chat.");
+});
 
 // ------------------------------------------------------------
 // 2️⃣  OPTIONAL ENDPOINTS FOR SLASH COMMANDS (If Needed)
@@ -62,7 +66,6 @@ app.post("/mytasks", async (req, res) => {
   res.json(reply);
 });
 
-
 // ------------------------------------------------------------
 // 3️⃣  API ENDPOINTS FOR DASHBOARD WIDGET
 // ------------------------------------------------------------
@@ -76,7 +79,6 @@ app.get("/api/stats", async (req, res) => {
   res.json({ ok: true, stats });
 });
 
-
 // ------------------------------------------------------------
 // 4️⃣  LOCAL TEST ENDPOINT (OPTIONAL)
 // ------------------------------------------------------------
@@ -86,7 +88,6 @@ app.post("/api/command", async (req, res) => {
   res.json(result);
 });
 
-
 // ------------------------------------------------------------
 // 5️⃣  RESET ALL TASKS (OPTIONAL)
 // ------------------------------------------------------------
@@ -94,7 +95,6 @@ app.post("/api/reset", async (req, res) => {
   await storage.reset();
   res.json({ ok: true, message: "All tasks deleted." });
 });
-
 
 // ------------------------------------------------------------
 // 6️⃣  PORT CONFIG FOR RENDER
