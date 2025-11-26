@@ -3,8 +3,33 @@ const storage = require("../services/storage");
 
 const taskbot = {};
 
+const ADMINS = ["hema.varshini", "admin", "owner"]; // add more usernames if needed
+
 function todayString() {
   return new Date().toLocaleString();
+}
+
+function addHistory(task, action, details, actor) {
+  task.history = task.history || [];
+  task.history.push({
+    action,
+    details,
+    actor: actor || "system",
+    time: new Date().toISOString()
+  });
+}
+
+function formatTask(task) {
+  if (!task) return "Task not found.";
+  return [
+    `#${task.id} — ${task.title}`,
+    `Status: ${task.status}`,
+    `Priority: ${task.priority || "medium"}`,
+    `Assigned to: ${task.assigned_to || "Unassigned"}`,
+    `Due: ${task.due || "—"}`,
+    `Parent: ${task.parent || "—"}`,
+    `Subtasks: ${task.subtasks && task.subtasks.length ? task.subtasks.join(", ") : "None"}`
+  ].join("\n");
 }
 
 /* ---------------------------------------------------
@@ -17,6 +42,55 @@ taskbot.dispatch = async (command, sender) => {
   const root = parts[0].toLowerCase();
 
   switch (root) {
+
+    /* ===========================================================
+       /help  → List all commands
+    ============================================================ */
+    case "/help": {
+      return {
+        ok: true,
+        message:
+          "📌 **Available Commands**\n\n" +
+          "/addtask <title>\n" +
+          "/smarttask <title>\n" +
+          "/assign <id> <user>\n" +
+          "/comment <id> <text>\n" +
+          "/start <id>\n" +
+          "/complete <id>\n" +
+          "/undo <id>\n" +
+          "/delete <id>\n" +
+          "/rename <id> <new title>\n" +
+          "/priority <id> <low|medium|high|critical>\n" +
+          "/due <id> <YYYY-MM-DD>\n" +
+          "/info <id>\n" +
+          "/whoisbusy\n" +
+          "/duein <days>\n" +
+          "/overdue\n" +
+          "/stats\n" +
+          "/completeall\n" +
+          "/export\n" +
+          "/search <filters>\n" +
+          "/history <id>\n" +
+          "/resetall  (admin only)\n" +
+          "/confirmreset  (admin only)\n"
+      };
+    }
+
+    /* ===========================================================
+       /stats → dashboard summary
+    ============================================================ */
+    case "/stats": {
+      const stats = await storage.stats();
+      return {
+        ok: true,
+        message:
+          `📊 **Task Summary**\n\n` +
+          `Total: ${stats.total}\n` +
+          `Pending: ${stats.pending}\n` +
+          `Completed: ${stats.completed}\n` +
+          `Overdue: ${stats.overdue}`
+      };
+    }
 
     /* ===========================================================
        /addtask TITLE
@@ -43,8 +117,12 @@ taskbot.dispatch = async (command, sender) => {
         subtasks: [],
         parent: null,
         deleted: false,
-        prev_status: null
+        prev_status: null,
+        history: []
       });
+
+      addHistory(task, "created", `Task created with title "${title}"`, sender);
+      await storage.update(task.id, task);
 
       return { ok:true, message:`Task added (#${task.id}): ${title}`, task };
     }
@@ -71,8 +149,11 @@ taskbot.dispatch = async (command, sender) => {
         subtasks: [],
         parent: null,
         deleted: false,
-        prev_status: null
+        prev_status: null,
+        history: []
       });
+
+      addHistory(parent, "created", "Smart task parent created", sender);
 
       const steps = [
         { label:"Research", assignee:"partner" },
@@ -94,8 +175,10 @@ taskbot.dispatch = async (command, sender) => {
           subtasks: [],
           parent: parent.id,
           deleted:false,
-          prev_status:null
+          prev_status:null,
+          history: []
         });
+        addHistory(sub, "created", `Subtask for ${s.label}`, sender);
         parent.subtasks.push(sub.id);
         subtasks.push(sub);
       }
@@ -123,6 +206,7 @@ taskbot.dispatch = async (command, sender) => {
       task.prev_status = task.status;
       task.status = "completed";
       task.completed_at = new Date().toISOString();
+      addHistory(task, "completed", "Task marked completed", sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Task #${id} marked complete.` };
@@ -144,6 +228,7 @@ taskbot.dispatch = async (command, sender) => {
       task.status = task.prev_status || "pending";
       task.prev_status = null;
       task.completed_at = null;
+      addHistory(task, "undo", "Completion undone", sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Task #${id} restored.` };
@@ -161,6 +246,7 @@ taskbot.dispatch = async (command, sender) => {
 
       task.prev_status = task.status;
       task.status = "in-progress";
+      addHistory(task, "start", "Task started", sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Task #${id} started.` };
@@ -177,6 +263,7 @@ taskbot.dispatch = async (command, sender) => {
       if (!task) return { ok:false, message:"Task not found." };
 
       task.deleted = true;
+      addHistory(task, "deleted", "Task soft deleted", sender);
       await storage.update(id, task);
 
       return { ok:true, message:`Task #${id} deleted.` };
@@ -195,7 +282,10 @@ taskbot.dispatch = async (command, sender) => {
       const task = await storage.get(id);
       if (!task) return { ok:false, message:"Task not found." };
 
+      const old = task.title;
       task.title = newTitle;
+      addHistory(task, "renamed", `Title changed from "${old}" to "${newTitle}"`, sender);
+
       await storage.update(id, task);
 
       return { ok:true, message:`Task #${id} renamed.` };
@@ -214,7 +304,9 @@ taskbot.dispatch = async (command, sender) => {
       const task = await storage.get(id);
       if (!task) return { ok:false, message:"Task not found." };
 
+      const old = task.assigned_to || "Unassigned";
       task.assigned_to = user;
+      addHistory(task, "assigned", `Assigned changed from ${old} to ${user}`, sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Task #${id} assigned to ${user}.` };
@@ -233,7 +325,9 @@ taskbot.dispatch = async (command, sender) => {
       const task = await storage.get(id);
       if (!task) return { ok:false, message:"Task not found." };
 
+      const old = task.due || "—";
       task.due = date;
+      addHistory(task, "due", `Due changed from ${old} to ${date}`, sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Due date set for task #${id}.` };
@@ -251,6 +345,7 @@ taskbot.dispatch = async (command, sender) => {
       if (!task) return { ok:false, message:"Task not found." };
 
       task.comments.push({ user: sender, text, time: todayString() });
+      addHistory(task, "comment", `Comment added: "${text}"`, sender);
       await storage.update(id, task);
 
       return { ok:true, message:`Comment added.` };
@@ -278,8 +373,12 @@ taskbot.dispatch = async (command, sender) => {
         comments: [],
         subtasks: [],
         parent: parentId,
-        deleted:false
+        deleted:false,
+        prev_status:null,
+        history: []
       });
+
+      addHistory(parent, "subtask_created", `Subtask #${sub.id} created: "${title}"`, sender);
 
       parent.subtasks.push(sub.id);
       await storage.update(parentId, parent);
@@ -300,8 +399,10 @@ taskbot.dispatch = async (command, sender) => {
       const task = await storage.get(id);
       if (!task) return { ok:false, message:"Task not found." };
 
+      const old = task.status;
       task.prev_status = task.status;
       task.status = status;
+      addHistory(task, "status", `Status changed from ${old} to ${status}`, sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Status updated.` };
@@ -320,7 +421,9 @@ taskbot.dispatch = async (command, sender) => {
       const task = await storage.get(id);
       if (!task) return { ok:false, message:"Task not found." };
 
+      const old = task.priority || "medium";
       task.priority = level;
+      addHistory(task, "priority", `Priority changed from ${old} to ${level}`, sender);
 
       await storage.update(id, task);
       return { ok:true, message:`Priority updated.` };
@@ -336,7 +439,30 @@ taskbot.dispatch = async (command, sender) => {
       const task = await storage.get(id);
       if (!task) return { ok:false, message:"Task not found." };
 
-      return { ok:true, task };
+      const formatted = formatTask(task);
+      return { ok:true, message: formatted, task };
+    }
+
+    /* ===========================================================
+       /history ID
+    ============================================================ */
+    case "/history": {
+      const id = parseInt(parts[1]);
+      if (!id) return { ok:false, message:"Usage: /history <id>" };
+
+      const task = await storage.get(id);
+      if (!task) return { ok:false, message:"Task not found." };
+
+      const h = (task.history || []).map(
+        (e, idx) => `${idx+1}. [${e.time}] ${e.actor}: ${e.action} – ${e.details}`
+      );
+
+      return {
+        ok: true,
+        message: h.length
+          ? `📜 **History for #${id}**\n` + h.join("\n")
+          : `No history recorded for task #${id}.`
+      };
     }
 
     /* ===========================================================
@@ -379,27 +505,156 @@ taskbot.dispatch = async (command, sender) => {
         t.due && new Date(t.due) >= now && new Date(t.due) <= future
       );
 
-      return { ok:true, tasks: output };
+      if (!output.length) {
+        return { ok:true, message:`No tasks due in next ${days} days.`, tasks: [] };
+      }
+
+      return {
+        ok:true,
+        message:
+          `📅 Tasks due in next ${days} days:\n` +
+          output.map(t => `#${t.id} - ${t.title} (due ${t.due})`).join("\n"),
+        tasks: output
+      };
     }
 
     /* ===========================================================
-       /overdue
+       Improved /overdue
     ============================================================ */
     case "/overdue": {
       const tasks = await storage.list();
       const now = new Date();
 
-      const output = tasks.filter(t => t.due && new Date(t.due) < now);
+      const output = tasks.filter(t =>
+        t.due && new Date(t.due) < now && t.status !== "completed"
+      );
 
-      return { ok:true, tasks: output };
+      return {
+        ok:true,
+        message:
+          output.length
+            ? "⏰ **Overdue Tasks:**\n" + output.map(t => `#${t.id} - ${t.title} (due ${t.due})`).join("\n")
+            : "🎉 No overdue tasks!",
+        tasks: output
+      };
     }
 
     /* ===========================================================
-       /resetall → Delete ALL tasks
+       /completeall → mark all non-deleted tasks completed
+    ============================================================ */
+    case "/completeall": {
+      const tasks = await storage.list();
+      for (const t of tasks) {
+        if (t.deleted) continue;
+        if (t.status !== "completed") {
+          t.prev_status = t.status;
+          t.status = "completed";
+          t.completed_at = new Date().toISOString();
+          addHistory(t, "completed_bulk", "Completed via /completeall", sender);
+          await storage.update(t.id, t);
+        }
+      }
+      return { ok:true, message:"✨ All tasks marked completed." };
+    }
+
+    /* ===========================================================
+       /export → CSV of all tasks
+    ============================================================ */
+    case "/export": {
+      const csv = await storage.exportCSV();
+      return {
+        ok: true,
+        message: "📁 **CSV Export (copy from below):**\n```csv\n" + csv + "\n```"
+      };
+    }
+
+    /* ===========================================================
+       /search priority:high status:pending assigned:hema
+       Other tokens without : are treated as text search in title
+    ============================================================ */
+    case "/search": {
+      const query = parts.slice(1).join(" ");
+      if (!query) return { ok:false, message:"Usage: /search <filters>\nExample: /search priority:high status:pending" };
+
+      const tokens = query.split(/\s+/);
+      const filters = {};
+      const keywords = [];
+
+      tokens.forEach(tok => {
+        if (tok.includes(":")) {
+          const [k,v] = tok.split(":", 2);
+          if (k && v) filters[k.toLowerCase()] = v.toLowerCase();
+        } else {
+          if (tok.trim()) keywords.push(tok.toLowerCase());
+        }
+      });
+
+      let tasks = await storage.list();
+
+      if (filters.status) {
+        tasks = tasks.filter(t => (t.status || "").toLowerCase() === filters.status);
+      }
+      if (filters.priority) {
+        tasks = tasks.filter(t => (t.priority || "").toLowerCase() === filters.priority);
+      }
+      if (filters.assigned || filters.user) {
+        const val = (filters.assigned || filters.user).toLowerCase();
+        tasks = tasks.filter(t => (t.assigned_to || "").toLowerCase().includes(val));
+      }
+
+      if (filters.duebefore) {
+        const d = new Date(filters.duebefore);
+        tasks = tasks.filter(t => t.due && new Date(t.due) <= d);
+      }
+      if (filters.dueafter) {
+        const d = new Date(filters.dueafter);
+        tasks = tasks.filter(t => t.due && new Date(t.due) >= d);
+      }
+
+      if (keywords.length) {
+        tasks = tasks.filter(t => {
+          const title = (t.title || "").toLowerCase();
+          return keywords.every(k => title.includes(k));
+        });
+      }
+
+      if (!tasks.length) {
+        return { ok:true, message:"No tasks matched your filters.", tasks: [] };
+      }
+
+      const lines = tasks.map(
+        t => `#${t.id} - ${t.title} [${t.status}, ${t.priority}, ${t.assigned_to || "Unassigned"}]`
+      );
+
+      return {
+        ok: true,
+        message: "🔎 **Search results:**\n" + lines.join("\n"),
+        tasks
+      };
+    }
+
+    /* ===========================================================
+       /resetall → Dangerous: ask for confirm (admin only)
     ============================================================ */
     case "/resetall": {
+      if (!ADMINS.includes(sender)) {
+        return { ok:false, message:"⛔ Only admins can reset all tasks." };
+      }
+      return {
+        ok:true,
+        message:"⚠️ This will delete *ALL* tasks. Type /confirmreset to continue."
+      };
+    }
+
+    /* ===========================================================
+       /confirmreset → Delete ALL tasks (admin only)
+    ============================================================ */
+    case "/confirmreset": {
+      if (!ADMINS.includes(sender)) {
+        return { ok:false, message:"⛔ You are not authorized." };
+      }
       await storage.reset();
-      return { ok:true, message:"All tasks deleted. Storage reset." };
+      return { ok:true, message:"🗑️ All tasks deleted. Storage reset." };
     }
 
     /* ===========================================================
