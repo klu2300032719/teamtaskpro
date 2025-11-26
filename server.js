@@ -9,34 +9,23 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Serve widget files
+// Serve dashboard widget files
 app.use("/widget", express.static(__dirname + "/widget"));
 
 // ------------------------------------------------------------
-// 1️⃣  BOT ENDPOINT FOR ZOHO CLIQ (Incoming Webhook Handler)
+// 1️⃣ BOT ENDPOINT FOR ZOHO CLIQ (Incoming Webhook Handler)
 // ------------------------------------------------------------
 app.post("/bot", async (req, res) => {
   try {
     const payload = req.body || {};
-
     console.log("Incoming Webhook Payload:", payload);
 
-    // Webhook handler sends:
-    // { body: { text: "...", user_name: "...", ... } }
     const body = payload.body || {};
-
-    const message =
-      body.text || body.message || body.command || "";
-
-    const sender =
-      body.user_name ||
-      body.user ||
-      body.sender ||
-      "unknown_user";
+    const message = body.text || body.message || body.command || "";
+    const sender = body.user_name || body.user || body.sender || "unknown_user";
 
     console.log("Parsed message:", message, "from:", sender);
 
-    // Simple onboarding: /start → welcome
     if (message && message.trim() === "/start") {
       return res.json({
         ok: true,
@@ -45,38 +34,39 @@ app.post("/bot", async (req, res) => {
     }
 
     const reply = await bot.dispatch(message, sender);
-
     return res.json(reply || { text: "No response from bot." });
+
   } catch (err) {
     console.error("BOT ERROR:", err);
-    return res.json({ text: "Bot error processing message." });
+    return res.json({ text: "❌ Bot error processing message." });
   }
 });
 
 // ------------------------------------------------------------
-//    FRIENDLY GET ENDPOINT FOR /bot
+// 2️⃣ Friendly GET endpoint for direct browser access
 // ------------------------------------------------------------
+app.get("/", (req, res) => {
+  res.send(`
+    <h2>🚀 TeamTaskPro Bot Backend is Running</h2>
+    <p>Use this bot inside Zoho Cliq.</p>
+    <p>Open Dashboard: <a href="/dashboard">Dashboard</a></p>
+    <p>Bot endpoint: <code>/bot</code></p>
+  `);
+});
+
 app.get("/bot", (req, res) => {
-  res.send("This endpoint is for Zoho Cliq bot POST requests only. Please use the bot in Zoho Cliq chat.");
+  res.send("This endpoint handles Zoho Cliq bot POST requests only.");
 });
 
 // ------------------------------------------------------------
-// 2️⃣  OPTIONAL ENDPOINTS FOR SLASH COMMANDS (If Needed)
+// 3️⃣ Dashboard Shortcut Route
 // ------------------------------------------------------------
-app.post("/addtask", async (req, res) => {
-  const { text, user } = req.body;
-  const reply = await bot.dispatch("/addtask " + text, user);
-  res.json(reply);
-});
-
-app.post("/mytasks", async (req, res) => {
-  const { user } = req.body;
-  const reply = await bot.dispatch("mytasks", user);
-  res.json(reply);
+app.get("/dashboard", (req, res) => {
+  res.redirect("/widget/dashboard.html");
 });
 
 // ------------------------------------------------------------
-// 3️⃣  API ENDPOINTS FOR DASHBOARD WIDGET
+// 4️⃣ API ENDPOINTS FOR DASHBOARD
 // ------------------------------------------------------------
 app.get("/api/tasks", async (req, res) => {
   const tasks = await storage.list();
@@ -88,35 +78,46 @@ app.get("/api/stats", async (req, res) => {
   res.json({ ok: true, stats });
 });
 
-// ------------------------------------------------------------
-// 4️⃣  LOCAL TEST ENDPOINT (OPTIONAL)
-// ------------------------------------------------------------
+// Local manual command testing
 app.post("/api/command", async (req, res) => {
   const { command, sender } = req.body;
   const result = await bot.dispatch(command, sender || "local_user");
   res.json(result);
 });
 
-// ------------------------------------------------------------
-// 5️⃣  RESET ALL TASKS (OPTIONAL) – direct API, not admin-checked
-// ------------------------------------------------------------
+// Safe Reset endpoint
 app.post("/api/reset", async (req, res) => {
   await storage.reset();
   res.json({ ok: true, message: "All tasks deleted." });
 });
 
 // ------------------------------------------------------------
-// 6️⃣  PORT CONFIG FOR RENDER
+// 5️⃣ Scheduler load (safe)
+// ------------------------------------------------------------
+try {
+  require("./scheduler");
+  console.log("⏰ Scheduler loaded successfully");
+} catch (err) {
+  console.log("⚠ Scheduler not loaded:", err.message);
+}
+
+// ------------------------------------------------------------
+// 6️⃣ PORT CONFIG
 // ------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
-
-// 🔔 Start scheduler (reminders)
-require("./scheduler");
 
 app.listen(PORT, () => {
   console.log("=====================================");
   console.log(" TeamTaskPro SERVER RUNNING");
   console.log(" Port =", PORT);
   console.log("=====================================");
-  console.log(`Widget: http://localhost:${PORT}/widget/dashboard.html`);
+  console.log(`Dashboard → http://localhost:${PORT}/dashboard`);
+  console.log(`Widget Raw → http://localhost:${PORT}/widget/dashboard.html`);
+});
+
+// ------------------------------------------------------------
+// 7️⃣ 404 Handler
+// ------------------------------------------------------------
+app.use((req, res) => {
+  res.status(404).send("❌ Route not found. Try /dashboard or /bot.");
 });
