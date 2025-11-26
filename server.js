@@ -1,3 +1,4 @@
+// server.js
 const express = require("express");
 const cors = require("cors");
 const bodyParser = require("body-parser");
@@ -35,6 +36,14 @@ app.post("/bot", async (req, res) => {
 
     console.log("Parsed message:", message, "from:", sender);
 
+    // Simple onboarding: /start → welcome
+    if (message && message.trim() === "/start") {
+      return res.json({
+        ok: true,
+        message: `👋 Hi ${sender}! I'm TeamTaskPro. Use /help to see all commands.`
+      });
+    }
+
     const reply = await bot.dispatch(message, sender);
 
     return res.json(reply || { text: "No response from bot." });
@@ -45,7 +54,7 @@ app.post("/bot", async (req, res) => {
 });
 
 // ------------------------------------------------------------
-//    NEW: FRIENDLY GET ENDPOINT FOR /bot
+//    FRIENDLY GET ENDPOINT FOR /bot
 // ------------------------------------------------------------
 app.get("/bot", (req, res) => {
   res.send("This endpoint is for Zoho Cliq bot POST requests only. Please use the bot in Zoho Cliq chat.");
@@ -56,7 +65,7 @@ app.get("/bot", (req, res) => {
 // ------------------------------------------------------------
 app.post("/addtask", async (req, res) => {
   const { text, user } = req.body;
-  const reply = await bot.dispatch("addtask " + text, user);
+  const reply = await bot.dispatch("/addtask " + text, user);
   res.json(reply);
 });
 
@@ -89,7 +98,7 @@ app.post("/api/command", async (req, res) => {
 });
 
 // ------------------------------------------------------------
-// 5️⃣  RESET ALL TASKS (OPTIONAL)
+// 5️⃣  RESET ALL TASKS (OPTIONAL) – direct API, not admin-checked
 // ------------------------------------------------------------
 app.post("/api/reset", async (req, res) => {
   await storage.reset();
@@ -100,6 +109,9 @@ app.post("/api/reset", async (req, res) => {
 // 6️⃣  PORT CONFIG FOR RENDER
 // ------------------------------------------------------------
 const PORT = process.env.PORT || 3000;
+
+// 🔔 Start scheduler (reminders)
+require("./scheduler");
 
 app.listen(PORT, () => {
   console.log("=====================================");
