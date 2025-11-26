@@ -3,7 +3,7 @@ const storage = require("../services/storage");
 
 const taskbot = {};
 
-const ADMINS = ["hema.varshini", "admin", "owner"]; // add more usernames if needed
+const ADMINS = ["hemavarshiniramesh", "admin", "owner"]; // add more usernames if needed
 
 function todayString() {
   return new Date().toLocaleString();
@@ -666,3 +666,4 @@ taskbot.dispatch = async (command, sender) => {
 };
 
 module.exports = taskbot;
+
