@@ -1,3 +1,4 @@
+// services/storage.js
 const fs = require("fs");
 const path = require("path");
 
@@ -53,7 +54,8 @@ storage.add = async (task) => {
     deleted: false,
     created_at: new Date().toISOString(),
     completed_at: null,
-    prev_status: task.prev_status || null
+    prev_status: task.prev_status || null,
+    history: task.history || []  // new
   };
 
   db.tasks.push(newTask);
@@ -128,11 +130,56 @@ storage.stats = async () => {
 
     if (t.due) {
       const d = new Date(t.due);
-      if (!isNaN(d) && d < now) overdue++;
+      if (!isNaN(d) && d < now && t.status !== "completed") overdue++;
     }
   }
 
   return { total, pending, completed, overdue };
+};
+
+/* ---------------------------------------------
+   CSV Export
+---------------------------------------------- */
+function escapeCSV(val) {
+  if (val === null || val === undefined) return "";
+  const s = String(val);
+  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+storage.exportCSV = async () => {
+  const tasks = await storage.list();
+  const headers = [
+    "id",
+    "title",
+    "assigned_to",
+    "status",
+    "priority",
+    "due",
+    "created_at",
+    "completed_at",
+    "parent"
+  ];
+  const lines = [headers.join(",")];
+
+  for (const t of tasks) {
+    const row = [
+      t.id,
+      t.title,
+      t.assigned_to,
+      t.status,
+      t.priority,
+      t.due,
+      t.created_at,
+      t.completed_at,
+      t.parent
+    ].map(escapeCSV);
+    lines.push(row.join(","));
+  }
+
+  return lines.join("\n");
 };
 
 module.exports = storage;
