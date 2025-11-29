@@ -1,118 +1,64 @@
 // services/storage.js
-const fs = require("fs");
+const fs = require("fs").promises;
 const path = require("path");
 
-const DB_FILE = path.join(__dirname, "db.json");
+const DB_FILE = path.join(__dirname, "..", "data", "tasks.json");
 
-/* ---------------------------------------------
-   Ensure the DB file exists
----------------------------------------------- */
-function init() {
-  if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(
-      DB_FILE,
-      JSON.stringify({ tasks: [], lastId: 0 }, null, 2)
-    );
+async function readDB() {
+  try {
+    const data = await fs.readFile(DB_FILE, "utf8");
+    return JSON.parse(data);
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return { lastId: 0, tasks: [] };
+    }
+    throw err;
   }
 }
-init();
 
-/* ---------------------------------------------
-   Load DB
----------------------------------------------- */
-function load() {
-  const raw = fs.readFileSync(DB_FILE, "utf8");
-  return JSON.parse(raw);
+async function writeDB(db) {
+  await fs.mkdir(path.dirname(DB_FILE), { recursive: true });
+  await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), "utf8");
 }
 
-/* ---------------------------------------------
-   Save DB
----------------------------------------------- */
-function save(data) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2));
+async function list() {
+  const db = await readDB();
+  return db.tasks || [];
 }
 
-const storage = {};
+async function get(id) {
+  const db = await readDB();
+  return (db.tasks || []).find((t) => t.id === id) || null;
+}
 
-/* ---------------------------------------------
-   ADD TASK
----------------------------------------------- */
-storage.add = async (task) => {
-  const db = load();
-  db.lastId += 1;
-
-  const newTask = {
-    id: db.lastId,
-    title: task.title,
-    assigned_to: task.assigned_to || null,
-    status: task.status || "pending",
-    priority: task.priority || "medium",
-    due: task.due || null,
-    comments: task.comments || [],
-    subtasks: task.subtasks || [],
-    parent: task.parent || null,
-    deleted: false,
-    created_at: new Date().toISOString(),
-    completed_at: null,
-    prev_status: task.prev_status || null,
-    history: task.history || []  // new
-  };
-
+async function add(task) {
+  const db = await readDB();
+  const nextId = (db.lastId || 0) + 1;
+  const newTask = { ...task, id: nextId };
+  db.lastId = nextId;
+  db.tasks = db.tasks || [];
   db.tasks.push(newTask);
-  save(db);
-
+  await writeDB(db);
   return newTask;
-};
+}
 
-/* ---------------------------------------------
-   GET BY ID
----------------------------------------------- */
-storage.get = async (id) => {
-  const db = load();
-  return db.tasks.find((t) => t.id === id);
-};
-
-/* ---------------------------------------------
-   UPDATE TASK
----------------------------------------------- */
-storage.update = async (id, updates) => {
-  const db = load();
+async function update(id, updatedTask) {
+  const db = await readDB();
+  db.tasks = db.tasks || [];
   const idx = db.tasks.findIndex((t) => t.id === id);
   if (idx === -1) return null;
-
-  db.tasks[idx] = { ...db.tasks[idx], ...updates };
-
-  if (db.tasks[idx].status === "completed" && !db.tasks[idx].completed_at) {
-    db.tasks[idx].completed_at = new Date().toISOString();
-  }
-
-  save(db);
+  db.tasks[idx] = { ...db.tasks[idx], ...updatedTask, id };
+  await writeDB(db);
   return db.tasks[idx];
-};
+}
 
-/* ---------------------------------------------
-   LIST ALL TASKS (non-deleted)
----------------------------------------------- */
-storage.list = async () => {
-  const db = load();
-  return db.tasks.filter((t) => !t.deleted);
-};
+async function reset() {
+  const db = { lastId: 0, tasks: [] };
+  await writeDB(db);
+}
 
-/* ---------------------------------------------
-   HARD RESET — delete all tasks
----------------------------------------------- */
-storage.reset = async () => {
-  const empty = { tasks: [], lastId: 0 };
-  save(empty);
-  return true;
-};
-
-/* ---------------------------------------------
-   Compute dashboard stats
----------------------------------------------- */
-storage.stats = async () => {
-  const db = load();
-  const tasks = db.tasks || [];
+async function stats() {
+  const tasks = await list();
   const now = new Date();
 
   let total = 0;
@@ -122,64 +68,60 @@ storage.stats = async () => {
 
   for (const t of tasks) {
     if (t.deleted) continue;
-
     total++;
 
     if (t.status === "completed") completed++;
     else pending++;
 
-    if (t.due) {
+    if (t.due && t.status !== "completed") {
       const d = new Date(t.due);
-      if (!isNaN(d) && d < now && t.status !== "completed") overdue++;
+      if (d < now) overdue++;
     }
   }
 
   return { total, pending, completed, overdue };
-};
-
-/* ---------------------------------------------
-   CSV Export
----------------------------------------------- */
-function escapeCSV(val) {
-  if (val === null || val === undefined) return "";
-  const s = String(val);
-  if (s.includes(",") || s.includes('"') || s.includes("\n")) {
-    return '"' + s.replace(/"/g, '""') + '"';
-  }
-  return s;
 }
 
-storage.exportCSV = async () => {
-  const tasks = await storage.list();
+async function exportCSV() {
+  const tasks = await list();
   const headers = [
     "id",
     "title",
-    "assigned_to",
     "status",
     "priority",
+    "assigned_to",
     "due",
-    "created_at",
-    "completed_at",
-    "parent"
+    "deleted",
+    "parent",
+    "subtasks",
   ];
+
   const lines = [headers.join(",")];
 
-  for (const t of tasks) {
+  tasks.forEach((t) => {
     const row = [
       t.id,
-      t.title,
-      t.assigned_to,
-      t.status,
-      t.priority,
-      t.due,
-      t.created_at,
-      t.completed_at,
-      t.parent
-    ].map(escapeCSV);
+      `"${(t.title || "").replace(/"/g, '""')}"`,
+      t.status || "",
+      t.priority || "",
+      t.assigned_to || "",
+      t.due || "",
+      t.deleted ? "1" : "0",
+      t.parent || "",
+      (t.subtasks || []).join("|"),
+    ];
     lines.push(row.join(","));
-  }
+  });
 
   return lines.join("\n");
-};
+}
 
-module.exports = storage;
+module.exports = {
+  list,
+  get,
+  add,
+  update,
+  reset,
+  stats,
+  exportCSV,
+};
