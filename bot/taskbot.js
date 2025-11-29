@@ -1,9 +1,8 @@
-// bot/taskbot.js
 const storage = require("../services/storage");
 
 const taskbot = {};
 
-const ADMINS = ["hemavarshiniramesh", "admin", "owner"]; // add more usernames if needed
+const ADMINS = ["hemavarshiniramesh", "admin", "owner"];
 
 function todayString() {
   return new Date().toLocaleString();
@@ -32,9 +31,6 @@ function formatTask(task) {
   ].join("\n");
 }
 
-/* ---------------------------------------------------
-   COMMAND DISPATCHER
------------------------------------------------------ */
 taskbot.dispatch = async (command, sender) => {
   if (!command) return { ok: false, message: "Empty command." };
 
@@ -42,7 +38,6 @@ taskbot.dispatch = async (command, sender) => {
   const root = parts[0].toLowerCase();
 
   switch (root) {
-
     case "/help": {
       return {
         ok: true,
@@ -497,7 +492,7 @@ taskbot.dispatch = async (command, sender) => {
       const csv = await storage.exportCSV();
       return {
         ok: true,
-        message: "📁 **CSV Export (copy from below):**\n```csv\n" + csv + "\n```"
+        message: "📁 **CSV Export (copy from below):**\n``````"
       };
     }
 
