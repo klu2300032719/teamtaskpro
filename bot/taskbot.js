@@ -15,7 +15,7 @@ function addHistory(task, action, details, actor) {
     action,
     details,
     actor: actor || "system",
-    time: new Date().toISOString()
+    time: new Date().toISOString(),
   });
 }
 
@@ -28,7 +28,11 @@ function formatTask(task) {
     `Assigned to: ${task.assigned_to || "Unassigned"}`,
     `Due: ${task.due || "—"}`,
     `Parent: ${task.parent || "—"}`,
-    `Subtasks: ${task.subtasks && task.subtasks.length ? task.subtasks.join(", ") : "None"}`
+    `Subtasks: ${
+      task.subtasks && task.subtasks.length
+        ? task.subtasks.join(", ")
+        : "None"
+    }`,
   ].join("\n");
 }
 
@@ -42,7 +46,6 @@ taskbot.dispatch = async (command, sender) => {
   const root = parts[0].toLowerCase();
 
   switch (root) {
-
     /* ===========================================================
        /help  → List all commands
     ============================================================ */
@@ -63,6 +66,9 @@ taskbot.dispatch = async (command, sender) => {
           "/priority <id> <low|medium|high|critical>\n" +
           "/due <id> <YYYY-MM-DD>\n" +
           "/info <id>\n" +
+          "/list\n" +
+          "/pending\n" +
+          "/completed\n" +
           "/whoisbusy\n" +
           "/duein <days>\n" +
           "/overdue\n" +
@@ -72,7 +78,7 @@ taskbot.dispatch = async (command, sender) => {
           "/search <filters>\n" +
           "/history <id>\n" +
           "/resetall  (admin only)\n" +
-          "/confirmreset  (admin only)\n"
+          "/confirmreset  (admin only)\n",
       };
     }
 
@@ -88,7 +94,62 @@ taskbot.dispatch = async (command, sender) => {
           `Total: ${stats.total}\n` +
           `Pending: ${stats.pending}\n` +
           `Completed: ${stats.completed}\n` +
-          `Overdue: ${stats.overdue}`
+          `Overdue: ${stats.overdue}`,
+      };
+    }
+
+    /* ===========================================================
+       /list → show all NON-DELETED tasks (with status)
+    ============================================================ */
+    case "/list":
+    case "/pending": {
+      const tasks = await storage.list();
+      const pending = tasks.filter(
+        (t) => !t.deleted && t.status !== "completed"
+      );
+
+      if (!pending.length) {
+        return { ok: true, message: "No pending tasks." };
+      }
+
+      const lines = pending.map(
+        (t) =>
+          `#${t.id} - ${t.title} [${t.status}, ${t.priority || "medium"}, ${
+            t.assigned_to || "Unassigned"
+          }]`
+      );
+
+      return {
+        ok: true,
+        message: "📋 **Pending / Active tasks:**\n" + lines.join("\n"),
+        tasks: pending,
+      };
+    }
+
+    /* ===========================================================
+       /completed → show completed tasks
+    ============================================================ */
+    case "/completed": {
+      const tasks = await storage.list();
+      const done = tasks.filter(
+        (t) => !t.deleted && t.status === "completed"
+      );
+
+      if (!done.length) {
+        return { ok: true, message: "No completed tasks." };
+      }
+
+      const lines = done.map(
+        (t) =>
+          `#${t.id} - ${t.title} [completed by ${
+            t.assigned_to || "someone"
+          }]`
+      );
+
+      return {
+        ok: true,
+        message: "✅ **Completed Tasks:**\n" + lines.join("\n"),
+        tasks: done,
       };
     }
 
@@ -97,7 +158,7 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/addtask": {
       const title = parts.slice(1).join(" ");
-      if (!title) return { ok:false, message:"Usage: /addtask <title>" };
+      if (!title) return { ok: false, message: "Usage: /addtask <title>" };
 
       let priority = "medium";
       const t = title.toLowerCase();
@@ -118,13 +179,13 @@ taskbot.dispatch = async (command, sender) => {
         parent: null,
         deleted: false,
         prev_status: null,
-        history: []
+        history: [],
       });
 
       addHistory(task, "created", `Task created with title "${title}"`, sender);
       await storage.update(task.id, task);
 
-      return { ok:true, message:`Task added (#${task.id}): ${title}`, task };
+      return { ok: true, message: `Task added (#${task.id}): ${title}`, task };
     }
 
     /* ===========================================================
@@ -133,7 +194,7 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/smarttask": {
       const title = parts.slice(1).join(" ");
-      if (!title) return { ok:false, message:"Usage: /smarttask <title>" };
+      if (!title) return { ok: false, message: "Usage: /smarttask <title>" };
 
       const now = new Date();
       const due = new Date();
@@ -143,23 +204,23 @@ taskbot.dispatch = async (command, sender) => {
         title,
         assigned_to: sender,
         status: "pending",
-        priority: "High",
+        priority: "high",
         due: due.toISOString(),
         comments: [],
         subtasks: [],
         parent: null,
         deleted: false,
         prev_status: null,
-        history: []
+        history: [],
       });
 
       addHistory(parent, "created", "Smart task parent created", sender);
 
       const steps = [
-        { label:"Research", assignee:"partner" },
-        { label:"Plan", assignee:"varshini" },
-        { label:"Draft", assignee:"rahul" },
-        { label:"Finalize", assignee: sender }
+        { label: "Research", assignee: "partner" },
+        { label: "Plan", assignee: "varshini" },
+        { label: "Draft", assignee: "rahul" },
+        { label: "Finalize", assignee: sender },
       ];
 
       const subtasks = [];
@@ -169,14 +230,14 @@ taskbot.dispatch = async (command, sender) => {
           title: `${s.label}: ${title}`,
           assigned_to: s.assignee,
           status: "pending",
-          priority: "Medium",
+          priority: "medium",
           due: due.toISOString(),
           comments: [],
           subtasks: [],
           parent: parent.id,
-          deleted:false,
-          prev_status:null,
-          history: []
+          deleted: false,
+          prev_status: null,
+          history: [],
         });
         addHistory(sub, "created", `Subtask for ${s.label}`, sender);
         parent.subtasks.push(sub.id);
@@ -189,7 +250,7 @@ taskbot.dispatch = async (command, sender) => {
         ok: true,
         message: `Smart task created: ${title} with 4 subtasks`,
         parent,
-        subtasks
+        subtasks,
       };
     }
 
@@ -198,10 +259,11 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/complete": {
       const id = parseInt(parts[1]);
-      if (!id) return { ok:false, message:"Usage: /complete <id>" };
+      if (!id) return { ok: false, message: "Usage: /complete <id>" };
 
       const task = await storage.get(id);
-      if (!task || task.deleted) return { ok:false, message:"Task not found." };
+      if (!task || task.deleted)
+        return { ok: false, message: "Task not found." };
 
       task.prev_status = task.status;
       task.status = "completed";
@@ -209,7 +271,7 @@ taskbot.dispatch = async (command, sender) => {
       addHistory(task, "completed", "Task marked completed", sender);
 
       await storage.update(id, task);
-      return { ok:true, message:`Task #${id} marked complete.` };
+      return { ok: true, message: `Task #${id} marked complete.` };
     }
 
     /* ===========================================================
@@ -217,13 +279,13 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/undo": {
       const id = parseInt(parts[1]);
-      if (!id) return { ok:false, message:"Usage: /undo <id>" };
+      if (!id) return { ok: false, message: "Usage: /undo <id>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       if (task.status !== "completed")
-        return { ok:false, message:"This task is not completed." };
+        return { ok: false, message: "This task is not completed." };
 
       task.status = task.prev_status || "pending";
       task.prev_status = null;
@@ -231,7 +293,7 @@ taskbot.dispatch = async (command, sender) => {
       addHistory(task, "undo", "Completion undone", sender);
 
       await storage.update(id, task);
-      return { ok:true, message:`Task #${id} restored.` };
+      return { ok: true, message: `Task #${id} restored.` };
     }
 
     /* ===========================================================
@@ -239,17 +301,17 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/start": {
       const id = parseInt(parts[1]);
-      if (!id) return { ok:false, message:"Usage: /start <id>" };
+      if (!id) return { ok: false, message: "Usage: /start <id>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       task.prev_status = task.status;
       task.status = "in-progress";
       addHistory(task, "start", "Task started", sender);
 
       await storage.update(id, task);
-      return { ok:true, message:`Task #${id} started.` };
+      return { ok: true, message: `Task #${id} started.` };
     }
 
     /* ===========================================================
@@ -257,16 +319,16 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/delete": {
       const id = parseInt(parts[1]);
-      if (!id) return { ok:false, message:"Usage: /delete <id>" };
+      if (!id) return { ok: false, message: "Usage: /delete <id>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       task.deleted = true;
       addHistory(task, "deleted", "Task soft deleted", sender);
       await storage.update(id, task);
 
-      return { ok:true, message:`Task #${id} deleted.` };
+      return { ok: true, message: `Task #${id} deleted.` };
     }
 
     /* ===========================================================
@@ -277,18 +339,23 @@ taskbot.dispatch = async (command, sender) => {
       const newTitle = parts.slice(2).join(" ");
 
       if (!id || !newTitle)
-        return { ok:false, message:"Usage: /rename <id> <new title>" };
+        return { ok: false, message: "Usage: /rename <id> <new title>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const old = task.title;
       task.title = newTitle;
-      addHistory(task, "renamed", `Title changed from "${old}" to "${newTitle}"`, sender);
+      addHistory(
+        task,
+        "renamed",
+        `Title changed from "${old}" to "${newTitle}"`,
+        sender
+      );
 
       await storage.update(id, task);
 
-      return { ok:true, message:`Task #${id} renamed.` };
+      return { ok: true, message: `Task #${id} renamed.` };
     }
 
     /* ===========================================================
@@ -299,17 +366,22 @@ taskbot.dispatch = async (command, sender) => {
       const user = parts[2];
 
       if (!id || !user)
-        return { ok:false, message:"Usage: /assign <id> <user>" };
+        return { ok: false, message: "Usage: /assign <id> <user>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const old = task.assigned_to || "Unassigned";
       task.assigned_to = user;
-      addHistory(task, "assigned", `Assigned changed from ${old} to ${user}`, sender);
+      addHistory(
+        task,
+        "assigned",
+        `Assigned changed from ${old} to ${user}`,
+        sender
+      );
 
       await storage.update(id, task);
-      return { ok:true, message:`Task #${id} assigned to ${user}.` };
+      return { ok: true, message: `Task #${id} assigned to ${user}.` };
     }
 
     /* ===========================================================
@@ -320,17 +392,17 @@ taskbot.dispatch = async (command, sender) => {
       const date = parts[2];
 
       if (!id || !date)
-        return { ok:false, message:"Usage: /due <id> <date>" };
+        return { ok: false, message: "Usage: /due <id> <date>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const old = task.due || "—";
       task.due = date;
       addHistory(task, "due", `Due changed from ${old} to ${date}`, sender);
 
       await storage.update(id, task);
-      return { ok:true, message:`Due date set for task #${id}.` };
+      return { ok: true, message: `Due date set for task #${id}.` };
     }
 
     /* ===========================================================
@@ -339,16 +411,17 @@ taskbot.dispatch = async (command, sender) => {
     case "/comment": {
       const id = parseInt(parts[1]);
       const text = parts.slice(2).join(" ");
-      if (!id || !text) return { ok:false, message:"Usage: /comment <id> <text>" };
+      if (!id || !text)
+        return { ok: false, message: "Usage: /comment <id> <text>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       task.comments.push({ user: sender, text, time: todayString() });
       addHistory(task, "comment", `Comment added: "${text}"`, sender);
       await storage.update(id, task);
 
-      return { ok:true, message:`Comment added.` };
+      return { ok: true, message: `Comment added.` };
     }
 
     /* ===========================================================
@@ -359,10 +432,10 @@ taskbot.dispatch = async (command, sender) => {
       const title = parts.slice(2).join(" ");
 
       if (!parentId || !title)
-        return { ok:false, message:"Usage: /subtask <parentId> <title>" };
+        return { ok: false, message: "Usage: /subtask <parentId> <title>" };
 
       const parent = await storage.get(parentId);
-      if (!parent) return { ok:false, message:"Parent task not found." };
+      if (!parent) return { ok: false, message: "Parent task not found." };
 
       const sub = await storage.add({
         title,
@@ -373,17 +446,22 @@ taskbot.dispatch = async (command, sender) => {
         comments: [],
         subtasks: [],
         parent: parentId,
-        deleted:false,
-        prev_status:null,
-        history: []
+        deleted: false,
+        prev_status: null,
+        history: [],
       });
 
-      addHistory(parent, "subtask_created", `Subtask #${sub.id} created: "${title}"`, sender);
+      addHistory(
+        parent,
+        "subtask_created",
+        `Subtask #${sub.id} created: "${title}"`,
+        sender
+      );
 
       parent.subtasks.push(sub.id);
       await storage.update(parentId, parent);
 
-      return { ok:true, message:`Subtask #${sub.id} created.` };
+      return { ok: true, message: `Subtask #${sub.id} created.` };
     }
 
     /* ===========================================================
@@ -393,19 +471,24 @@ taskbot.dispatch = async (command, sender) => {
       const id = parseInt(parts[1]);
       const status = parts[2];
 
-      if (!id || !["pending","in-progress","completed"].includes(status))
-        return { ok:false, message:"Usage: /status <id> <status>" };
+      if (!id || !["pending", "in-progress", "completed"].includes(status))
+        return { ok: false, message: "Usage: /status <id> <status>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const old = task.status;
       task.prev_status = task.status;
       task.status = status;
-      addHistory(task, "status", `Status changed from ${old} to ${status}`, sender);
+      addHistory(
+        task,
+        "status",
+        `Status changed from ${old} to ${status}`,
+        sender
+      );
 
       await storage.update(id, task);
-      return { ok:true, message:`Status updated.` };
+      return { ok: true, message: `Status updated.` };
     }
 
     /* ===========================================================
@@ -415,18 +498,23 @@ taskbot.dispatch = async (command, sender) => {
       const id = parseInt(parts[1]);
       const level = parts[2];
 
-      if (!id || !["low","medium","high","critical"].includes(level))
-        return { ok:false, message:"Usage: /priority <id> <level>" };
+      if (!id || !["low", "medium", "high", "critical"].includes(level))
+        return { ok: false, message: "Usage: /priority <id> <level>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const old = task.priority || "medium";
       task.priority = level;
-      addHistory(task, "priority", `Priority changed from ${old} to ${level}`, sender);
+      addHistory(
+        task,
+        "priority",
+        `Priority changed from ${old} to ${level}`,
+        sender
+      );
 
       await storage.update(id, task);
-      return { ok:true, message:`Priority updated.` };
+      return { ok: true, message: `Priority updated.` };
     }
 
     /* ===========================================================
@@ -434,13 +522,13 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/info": {
       const id = parseInt(parts[1]);
-      if (!id) return { ok:false, message:"Usage: /info <id>" };
+      if (!id) return { ok: false, message: "Usage: /info <id>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const formatted = formatTask(task);
-      return { ok:true, message: formatted, task };
+      return { ok: true, message: formatted, task };
     }
 
     /* ===========================================================
@@ -448,20 +536,21 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/history": {
       const id = parseInt(parts[1]);
-      if (!id) return { ok:false, message:"Usage: /history <id>" };
+      if (!id) return { ok: false, message: "Usage: /history <id>" };
 
       const task = await storage.get(id);
-      if (!task) return { ok:false, message:"Task not found." };
+      if (!task) return { ok: false, message: "Task not found." };
 
       const h = (task.history || []).map(
-        (e, idx) => `${idx+1}. [${e.time}] ${e.actor}: ${e.action} – ${e.details}`
+        (e, idx) =>
+          `${idx + 1}. [${e.time}] ${e.actor}: ${e.action} – ${e.details}`
       );
 
       return {
         ok: true,
         message: h.length
           ? `📜 **History for #${id}**\n` + h.join("\n")
-          : `No history recorded for task #${id}.`
+          : `No history recorded for task #${id}.`,
       };
     }
 
@@ -472,13 +561,14 @@ taskbot.dispatch = async (command, sender) => {
       const tasks = await storage.list();
       const counts = {};
 
-      tasks.forEach(t => {
+      tasks.forEach((t) => {
         if (t.deleted) return;
         const u = t.assigned_to || "Unassigned";
         counts[u] = (counts[u] || 0) + 1;
       });
 
-      let maxUser = null, maxCount = 0;
+      let maxUser = null,
+        maxCount = 0;
       for (const u in counts) {
         if (counts[u] > maxCount) {
           maxCount = counts[u];
@@ -486,7 +576,7 @@ taskbot.dispatch = async (command, sender) => {
         }
       }
 
-      return { ok:true, message:`${maxUser} has ${maxCount} tasks.` };
+      return { ok: true, message: `${maxUser} has ${maxCount} tasks.` };
     }
 
     /* ===========================================================
@@ -494,27 +584,37 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/duein": {
       const days = parseInt(parts[1]);
-      if (!days) return { ok:false, message:"Usage: /duein <days>" };
+      if (!days) return { ok: false, message: "Usage: /duein <days>" };
 
       const tasks = await storage.list();
       const now = new Date();
       const future = new Date();
       future.setDate(now.getDate() + days);
 
-      const output = tasks.filter(t =>
-        t.due && new Date(t.due) >= now && new Date(t.due) <= future
+      const output = tasks.filter(
+        (t) =>
+          t.due &&
+          new Date(t.due) >= now &&
+          new Date(t.due) <= future &&
+          !t.deleted
       );
 
       if (!output.length) {
-        return { ok:true, message:`No tasks due in next ${days} days.`, tasks: [] };
+        return {
+          ok: true,
+          message: `No tasks due in next ${days} days.`,
+          tasks: [],
+        };
       }
 
       return {
-        ok:true,
+        ok: true,
         message:
           `📅 Tasks due in next ${days} days:\n` +
-          output.map(t => `#${t.id} - ${t.title} (due ${t.due})`).join("\n"),
-        tasks: output
+          output
+            .map((t) => `#${t.id} - ${t.title} (due ${t.due})`)
+            .join("\n"),
+        tasks: output,
       };
     }
 
@@ -525,17 +625,23 @@ taskbot.dispatch = async (command, sender) => {
       const tasks = await storage.list();
       const now = new Date();
 
-      const output = tasks.filter(t =>
-        t.due && new Date(t.due) < now && t.status !== "completed"
+      const output = tasks.filter(
+        (t) =>
+          !t.deleted &&
+          t.due &&
+          new Date(t.due) < now &&
+          t.status !== "completed"
       );
 
       return {
-        ok:true,
-        message:
-          output.length
-            ? "⏰ **Overdue Tasks:**\n" + output.map(t => `#${t.id} - ${t.title} (due ${t.due})`).join("\n")
-            : "🎉 No overdue tasks!",
-        tasks: output
+        ok: true,
+        message: output.length
+          ? "⏰ **Overdue Tasks:**\n" +
+            output
+              .map((t) => `#${t.id} - ${t.title} (due ${t.due})`)
+              .join("\n")
+          : "🎉 No overdue tasks!",
+        tasks: output,
       };
     }
 
@@ -550,11 +656,16 @@ taskbot.dispatch = async (command, sender) => {
           t.prev_status = t.status;
           t.status = "completed";
           t.completed_at = new Date().toISOString();
-          addHistory(t, "completed_bulk", "Completed via /completeall", sender);
+          addHistory(
+            t,
+            "completed_bulk",
+            "Completed via /completeall",
+            sender
+          );
           await storage.update(t.id, t);
         }
       }
-      return { ok:true, message:"✨ All tasks marked completed." };
+      return { ok: true, message: "✨ All tasks marked completed." };
     }
 
     /* ===========================================================
@@ -564,25 +675,29 @@ taskbot.dispatch = async (command, sender) => {
       const csv = await storage.exportCSV();
       return {
         ok: true,
-        message: "📁 **CSV Export (copy from below):**\n```csv\n" + csv + "\n```"
+        message: "📁 **CSV Export (copy from below):**\n```csv\n" + csv + "\n```",
       };
     }
 
     /* ===========================================================
        /search priority:high status:pending assigned:hema
-       Other tokens without : are treated as text search in title
     ============================================================ */
     case "/search": {
       const query = parts.slice(1).join(" ");
-      if (!query) return { ok:false, message:"Usage: /search <filters>\nExample: /search priority:high status:pending" };
+      if (!query)
+        return {
+          ok: false,
+          message:
+            "Usage: /search <filters>\nExample: /search priority:high status:pending",
+        };
 
       const tokens = query.split(/\s+/);
       const filters = {};
       const keywords = [];
 
-      tokens.forEach(tok => {
+      tokens.forEach((tok) => {
         if (tok.includes(":")) {
-          const [k,v] = tok.split(":", 2);
+          const [k, v] = tok.split(":", 2);
           if (k && v) filters[k.toLowerCase()] = v.toLowerCase();
         } else {
           if (tok.trim()) keywords.push(tok.toLowerCase());
@@ -592,44 +707,53 @@ taskbot.dispatch = async (command, sender) => {
       let tasks = await storage.list();
 
       if (filters.status) {
-        tasks = tasks.filter(t => (t.status || "").toLowerCase() === filters.status);
+        tasks = tasks.filter(
+          (t) => (t.status || "").toLowerCase() === filters.status
+        );
       }
       if (filters.priority) {
-        tasks = tasks.filter(t => (t.priority || "").toLowerCase() === filters.priority);
+        tasks = tasks.filter(
+          (t) => (t.priority || "").toLowerCase() === filters.priority
+        );
       }
       if (filters.assigned || filters.user) {
         const val = (filters.assigned || filters.user).toLowerCase();
-        tasks = tasks.filter(t => (t.assigned_to || "").toLowerCase().includes(val));
+        tasks = tasks.filter((t) =>
+          (t.assigned_to || "").toLowerCase().includes(val)
+        );
       }
 
       if (filters.duebefore) {
         const d = new Date(filters.duebefore);
-        tasks = tasks.filter(t => t.due && new Date(t.due) <= d);
+        tasks = tasks.filter((t) => t.due && new Date(t.due) <= d);
       }
       if (filters.dueafter) {
         const d = new Date(filters.dueafter);
-        tasks = tasks.filter(t => t.due && new Date(t.due) >= d);
+        tasks = tasks.filter((t) => t.due && new Date(t.due) >= d);
       }
 
       if (keywords.length) {
-        tasks = tasks.filter(t => {
+        tasks = tasks.filter((t) => {
           const title = (t.title || "").toLowerCase();
-          return keywords.every(k => title.includes(k));
+          return keywords.every((k) => title.includes(k));
         });
       }
 
       if (!tasks.length) {
-        return { ok:true, message:"No tasks matched your filters.", tasks: [] };
+        return { ok: true, message: "No tasks matched your filters.", tasks: [] };
       }
 
       const lines = tasks.map(
-        t => `#${t.id} - ${t.title} [${t.status}, ${t.priority}, ${t.assigned_to || "Unassigned"}]`
+        (t) =>
+          `#${t.id} - ${t.title} [${t.status}, ${t.priority}, ${
+            t.assigned_to || "Unassigned"
+          }]`
       );
 
       return {
         ok: true,
         message: "🔎 **Search results:**\n" + lines.join("\n"),
-        tasks
+        tasks,
       };
     }
 
@@ -638,11 +762,12 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/resetall": {
       if (!ADMINS.includes(sender)) {
-        return { ok:false, message:"⛔ Only admins can reset all tasks." };
+        return { ok: false, message: "⛔ Only admins can reset all tasks." };
       }
       return {
-        ok:true,
-        message:"⚠️ This will delete *ALL* tasks. Type /confirmreset to continue."
+        ok: true,
+        message:
+          "⚠️ This will delete *ALL* tasks. Type /confirmreset to continue.",
       };
     }
 
@@ -651,19 +776,18 @@ taskbot.dispatch = async (command, sender) => {
     ============================================================ */
     case "/confirmreset": {
       if (!ADMINS.includes(sender)) {
-        return { ok:false, message:"⛔ You are not authorized." };
+        return { ok: false, message: "⛔ You are not authorized." };
       }
       await storage.reset();
-      return { ok:true, message:"🗑️ All tasks deleted. Storage reset." };
+      return { ok: true, message: "🗑️ All tasks deleted. Storage reset." };
     }
 
     /* ===========================================================
        UNKNOWN COMMAND
     ============================================================ */
     default:
-      return { ok:false, message:"Unknown command. Try /help" };
+      return { ok: false, message: "Unknown command. Try /help" };
   }
 };
 
 module.exports = taskbot;
-
