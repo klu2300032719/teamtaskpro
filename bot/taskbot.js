@@ -1,73 +1,73 @@
+// bot/taskbot.js
 const storage = require("../services/storage");
+
 const taskbot = {};
-const ADMINS = ["hemavarshiniramesh", "admin", "owner"];
+
+const ADMINS = ["hemavarshiniramesh", "admin", "owner"]; // add more usernames if needed
+
+function todayString() {
+  return new Date().toLocaleString();
+}
 
 function addHistory(task, action, details, actor) {
   task.history = task.history || [];
-  task.history.push({ action, details, actor, time: new Date().toISOString() });
+  task.history.push({
+    action,
+    details,
+    actor: actor || "system",
+    time: new Date().toISOString()
+  });
 }
 
 function formatTask(task) {
+  if (!task) return "Task not found.";
   return [
     `#${task.id} — ${task.title}`,
     `Status: ${task.status}`,
-    `Priority: ${task.priority}`,
-    `Assigned: ${task.assigned_to || "Unassigned"}`,
+    `Priority: ${task.priority || "medium"}`,
+    `Assigned to: ${task.assigned_to || "Unassigned"}`,
     `Due: ${task.due || "—"}`,
-    `Subtasks: ${task.subtasks?.length ? task.subtasks.join(", ") : "None"}`
+    `Parent: ${task.parent || "—"}`,
+    `Subtasks: ${task.subtasks && task.subtasks.length ? task.subtasks.join(", ") : "None"}`
   ].join("\n");
 }
 
+/* ---------------------------------------------------
+   COMMAND DISPATCHER
+----------------------------------------------------- */
 taskbot.dispatch = async (command, sender) => {
   if (!command) return { ok: false, message: "Empty command." };
+
   const parts = command.trim().split(" ");
   const root = parts[0].toLowerCase();
 
   switch (root) {
-    case "/help":
-      return { ok: true, message: "📌 Commands:\n/addtask\n/complete\n/undo\n/delete\n/assign\n/priority\n/due\n/info\n/stats\n/search\n/completeall\n/export\n/resetall (admin)" };
-
-    case "/stats":
-      return { ok: true, stats: await storage.stats() };
-
-    case "/addtask": {
-      const title = parts.slice(1).join(" ");
-      const task = await storage.add({
-        title, assigned_to: sender, status: "pending",
-        priority: "medium", due: null, comments: [], subtasks: [], parent: null, deleted: false
-      });
-      addHistory(task, "created", `"${title}"`, sender);
-      await storage.update(task.id, task);
-      return { ok: true, message: `Added #${task.id}`, task };
+    case "/help": {
+      return {
+        ok: true,
+        message:
+          "📌 **Available Commands**\n\n" +
+          "/addtask <title>\n" +
+          "/smarttask <title>\n" +
+          "/assign <id> <user>\n" +
+          "/comment <id> <text>\n" +
+          "/start <id>\n" +
+          "/complete <id>\n" +
+          "/undo <id>\n" +
+          "/delete <id>\n" +
+          "/rename <id> <new title>\n" +
+          "/priority <id> <low|medium|high|critical>\n" +
+          "/due <id> <YYYY-MM-DD>\n" +
+          "/info <id>\n" +
+          "/whoisbusy\n" +
+          "/duein <days>\n" +
+          "/overdue\n" +
+          "/stats\n" +
+          "/completeall\n" +
+          "/export\n" +
+          "/search <filters>\n" +
+          "/history <id>\n" +
+          "/resetall  (admin only)\n" +
+          "/confirmreset  (admin only)\n"
+      };
     }
-
-    case "/complete": {
-      const id = parseInt(parts[1]);
-      const task = await storage.get(id);
-      task.prev_status = task.status;
-      task.status = "completed";
-      task.completed_at = new Date().toISOString();
-      addHistory(task, "complete", "", sender);
-      await storage.update(id, task);
-      return { ok: true, message: `Completed #${id}` };
-    }
-
-    case "/undo": {
-      const id = parseInt(parts[1]);
-      const task = await storage.get(id);
-      task.status = task.prev_status || "pending";
-      task.prev_status = null;
-      addHistory(task, "undo", "", sender);
-      await storage.update(id, task);
-      return { ok: true, message: `Undo complete #${id}` };
-    }
-
-    case "/info":
-      return { ok: true, message: formatTask(await storage.get(parseInt(parts[1]))) };
-
-    default:
-      return { ok: false, message: "Unknown command" };
-  }
-};
-
-module.exports = taskbot;
