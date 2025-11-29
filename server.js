@@ -11,8 +11,15 @@ const PORT = process.env.PORT || 3000;
 
 app.use(bodyParser.json());
 
-// Serve static frontend (dashboard)
+/* -------------------------------
+   Serve static frontend
+-------------------------------- */
+
+// Serve /public if needed
 app.use(express.static(path.join(__dirname, "public")));
+
+// Serve widget folder explicitly (needed for Cliq widget UI)
+app.use("/widget", express.static(path.join(__dirname, "widget")));
 
 /* -------------------------------
    API: Stats
@@ -22,28 +29,26 @@ app.get("/api/stats", async (req, res) => {
     const stats = await storage.stats();
     res.json({ ok: true, stats });
   } catch (err) {
-    console.error("Error in /api/stats:", err);
-    res.status(500).json({ ok: false, message: "Error getting stats" });
+    console.error(err);
+    res.status(500).json({ ok: false, message: "Error fetching stats" });
   }
 });
 
 /* -------------------------------
-   API: All Tasks (for dashboard)
+   API: Tasks
 -------------------------------- */
 app.get("/api/tasks", async (req, res) => {
   try {
     const tasks = await storage.list();
-    const visible = tasks.filter((t) => !t.deleted);
-    res.json({ ok: true, tasks: visible });
+    res.json({ ok: true, tasks: tasks.filter(t => !t.deleted) });
   } catch (err) {
-    console.error("Error in /api/tasks:", err);
-    res.status(500).json({ ok: false, message: "Error getting tasks" });
+    console.error(err);
+    res.status(500).json({ ok: false, message: "Error fetching tasks" });
   }
 });
 
 /* -------------------------------
-   API: Command (from dashboard)
-   Body: { command: "/complete 3", sender: "dashboard" }
+   API: Command (Complete/Undo etc.)
 -------------------------------- */
 app.post("/api/command", async (req, res) => {
   try {
@@ -51,11 +56,14 @@ app.post("/api/command", async (req, res) => {
     const result = await taskbot.dispatch(command, sender || "dashboard");
     res.json(result);
   } catch (err) {
-    console.error("Error in /api/command:", err);
-    res.status(500).json({ ok: false, message: "Error executing command" });
+    console.error(err);
+    res.status(500).json({ ok: false, message: "Command execution failed" });
   }
 });
 
+/* -------------------------------
+   Start server
+-------------------------------- */
 app.listen(PORT, () => {
-  console.log(`✅ TeamTaskPro server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
