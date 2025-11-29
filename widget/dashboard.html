@@ -133,7 +133,7 @@
   </div>
 
 <script>
-async function api(path, opts={}) {
+async function api(path, opts = {}) {
   const res = await fetch(location.origin + '/api' + path, opts);
   return res.json();
 }
