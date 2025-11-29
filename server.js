@@ -1,15 +1,15 @@
 const express = require("express");
 const app = express();
-const taskbot = require("./bot/taskbot");
+const path = require("path");
 const storage = require("./services/storage");
+const taskbot = require("./bot/taskbot");
 
 app.use(express.json());
-app.use(express.static("public")); // dashboard.html inside public/
+app.use(express.static("widget")); // serves dashboard.html
 
-app.post("/api/command", async (req, res) => {
-  const { command, sender } = req.body;
-  const resp = await taskbot.dispatch(command, sender || "unknown");
-  res.json(resp);
+app.get("/api/stats", async (req, res) => {
+  const stats = await storage.stats();
+  res.json({ stats });
 });
 
 app.get("/api/tasks", async (req, res) => {
@@ -17,10 +17,15 @@ app.get("/api/tasks", async (req, res) => {
   res.json({ tasks });
 });
 
-app.get("/api/stats", async (req, res) => {
-  const stats = await storage.stats();
-  res.json({ stats });
+app.post("/api/command", async (req, res) => {
+  const { command, sender } = req.body;
+  const result = await taskbot.dispatch(command, sender || "unknown");
+  res.json(result);
+});
+
+app.get("/", (req, res) => {
+  res.sendFile(path.join(__dirname, "widget", "dashboard.html"));
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log("Server running on port " + PORT));
