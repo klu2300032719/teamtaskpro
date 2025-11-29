@@ -1,355 +1,62 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8" />
-    <title>TeamTaskPro — Dashboard</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+<head>
+  <meta charset="utf-8"/>
+  <title>TeamTaskPro — Dashboard</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:system-ui;padding:16px;background:#f7f9fb;}
+    .cards{display:flex;gap:12px;margin-bottom:20px;}
+    .card{background:white;padding:14px;border-radius:10px;min-width:140px;box-shadow:0 2px 5px rgba(0,0,0,0.08);}
+    .task{background:#fff;padding:12px;border-radius:8px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,0.08);}
+    .btn{padding:6px 12px;background:#1976d2;color:#fff;border:0;border-radius:6px;cursor:pointer;}
+  </style>
+</head>
+<body>
 
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<h2>📊 TeamTaskPro Dashboard</h2>
 
-    <style>
-      body {
-        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial;
-        padding: 16px;
-        background: #f7f9fb;
-        transition: opacity 0.25s ease;
-      }
-      body.fade {
-        opacity: 0.3;
-      }
+<div class="cards">
+  <div class="card" id="totalCard">Total: -</div>
+  <div class="card" id="pendingCard">Pending: -</div>
+  <div class="card" id="completedCard">Completed: -</div>
+  <div class="card" id="overdueCard">Overdue: -</div>
+</div>
 
-      h2 {
-        margin: 0 0 16px;
-      }
+<h3>All Tasks</h3>
+<div id="tasks"></div>
 
-      .cards {
-        display: flex;
-        gap: 12px;
-        flex-wrap: wrap;
-        margin-bottom: 20px;
-      }
+<script>
+async function api(path){ return (await fetch("/api"+path)).json(); }
+function fmtDate(s){ return s ? new Date(s).toLocaleString() : "—"; }
 
-      .card {
-        background: white;
-        padding: 14px;
-        border-radius: 10px;
-        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
-        min-width: 140px;
-        font-size: 16px;
-      }
+async function load(){
+  const stats = await api("/stats");
+  document.getElementById("totalCard").innerText = `Total: ${stats.stats.total}`;
+  document.getElementById("pendingCard").innerText = `Pending: ${stats.stats.pending}`;
+  document.getElementById("completedCard").innerText = `Completed: ${stats.stats.completed}`;
+  document.getElementById("overdueCard").innerText = `Overdue: ${stats.stats.overdue}`;
 
-      .section {
-        margin-top: 18px;
-      }
+  const tasksResp = await api("/tasks");
+  const tasks = tasksResp.tasks;
+  document.getElementById("tasks").innerHTML = tasks.map(t => `
+    <div class="task">
+      <b>${t.id}. ${t.title}</b>
+      <div>Assigned: ${t.assigned_to} | Status: ${t.status} | Due: ${fmtDate(t.due)}</div>
+      <button class="btn" data-id="${t.id}" data-action="${t.status==='pending'?'complete':'undo'}">${t.status==='pending'?'Complete':'Undo'}</button>
+    </div>`).join("");
+}
 
-      .task {
-        background: #fff;
-        padding: 12px;
-        border-radius: 8px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-        margin-bottom: 12px;
-      }
+document.getElementById("tasks").addEventListener("click", async e=>{
+  if(e.target.tagName!=="BUTTON") return;
+  const id = e.target.dataset.id;
+  const action = e.target.dataset.action;
+  await fetch("/api/command",{method:"POST",headers:{'Content-Type':'application/json'},body:JSON.stringify({command:`/${action} ${id}`,sender:'dashboard'})});
+  load();
+});
 
-      .meta {
-        margin-top: 6px;
-        font-size: 13px;
-        color: #666;
-      }
-
-      .btn {
-        padding: 6px 12px;
-        border: 0;
-        border-radius: 6px;
-        background: #1976d2;
-        color: white;
-        cursor: pointer;
-      }
-
-      .smallbtn {
-        padding: 4px 8px;
-        font-size: 13px;
-      }
-      .danger {
-        background: #d32f2f;
-      }
-
-      #loader {
-        width: 18px;
-        height: 18px;
-        border: 3px solid #ccc;
-        border-top-color: #1976d2;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-        display: none;
-        margin-left: 10px;
-      }
-
-      @keyframes spin {
-        to {
-          transform: rotate(360deg);
-        }
-      }
-
-      .charts {
-        display: flex;
-        gap: 16px;
-        flex-wrap: wrap;
-        margin-top: 14px;
-      }
-
-      .chart-card {
-        flex: 1;
-        background: #fff;
-        padding: 16px;
-        border-radius: 10px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-        min-width: 260px;
-      }
-
-      canvas {
-        height: 230px !important;
-      }
-    </style>
-  </head>
-
-  <body>
-    <h2>📊 TeamTaskPro Dashboard</h2>
-
-    <div class="cards">
-      <div class="card" id="totalCard">Total: -</div>
-      <div class="card" id="pendingCard">Pending: -</div>
-      <div class="card" id="completedCard">Completed: -</div>
-      <div class="card" id="overdueCard">Overdue: -</div>
-    </div>
-
-    <div class="section">
-      <h3>Team Workload</h3>
-      <div id="workloadList"></div>
-
-      <div style="margin-top: 8px; display: flex; align-items: center">
-        <button class="btn" id="refreshBtn">Refresh</button>
-        <div id="loader"></div>
-      </div>
-
-      <div class="charts">
-        <div class="chart-card">
-          <h4>Workload</h4>
-          <canvas id="workloadChart"></canvas>
-        </div>
-
-        <div class="chart-card">
-          <h4>Completion Status</h4>
-          <canvas id="completionChart"></canvas>
-        </div>
-      </div>
-    </div>
-
-    <div class="section">
-      <h3>All Tasks</h3>
-      <div id="tasks"></div>
-    </div>
-
-    <script>
-      /* ----------------------------
-          API HELPER
-      ----------------------------- */
-      async function api(path, opts = {}) {
-        const res = await fetch(location.origin + "/api" + path, opts);
-        return res.json();
-      }
-
-      function fmtDate(s) {
-        return s ? new Date(s).toLocaleString() : "—";
-      }
-
-      /* ----------------------------
-          CHARTS
-      ----------------------------- */
-      let workloadChart = null;
-      let completionChart = null;
-
-      function renderWorkloadChart(labels, values) {
-        const ctx = document
-          .getElementById("workloadChart")
-          .getContext("2d");
-        if (!workloadChart) {
-          workloadChart = new Chart(ctx, {
-            type: "bar",
-            data: {
-              labels,
-              datasets: [
-                { data: values, borderRadius: 6, borderSkipped: false },
-              ],
-            },
-            options: {
-              plugins: { legend: { display: false } },
-              responsive: true,
-              maintainAspectRatio: false,
-            },
-          });
-        } else {
-          workloadChart.data.labels = labels;
-          workloadChart.data.datasets[0].data = values;
-          workloadChart.update();
-        }
-      }
-
-      function renderCompletionChart(completed, pending) {
-        const ctx = document
-          .getElementById("completionChart")
-          .getContext("2d");
-        if (!completionChart) {
-          completionChart = new Chart(ctx, {
-            type: "doughnut",
-            data: {
-              labels: ["Completed", "Pending"],
-              datasets: [{ data: [completed, pending] }],
-            },
-            options: {
-              plugins: { legend: { position: "bottom" } },
-              responsive: true,
-              maintainAspectRatio: false,
-            },
-          });
-        } else {
-          completionChart.data.datasets[0].data = [completed, pending];
-          completionChart.update();
-        }
-      }
-
-      /* ----------------------------
-          MAIN LOAD FUNCTION
-      ----------------------------- */
-      async function load() {
-        document.body.classList.add("fade");
-        document.getElementById("loader").style.display = "inline-block";
-        document.getElementById("refreshBtn").disabled = true;
-
-        await new Promise((r) => setTimeout(r, 120)); // small pause for UI effect
-
-        const statsResp = await api("/stats");
-        const stats = statsResp.stats || {};
-
-        document.getElementById(
-          "totalCard"
-        ).innerText = `Total: ${stats.total ?? "-"}`;
-        document.getElementById(
-          "pendingCard"
-        ).innerText = `Pending: ${stats.pending ?? "-"}`;
-        document.getElementById(
-          "completedCard"
-        ).innerText = `Completed: ${stats.completed ?? "-"}`;
-        document.getElementById(
-          "overdueCard"
-        ).innerText = `Overdue: ${stats.overdue ?? "-"}`;
-
-        const tasksResp = await api("/tasks");
-        const tasks = tasksResp.tasks || [];
-
-        /* -------- Workload list ---------- */
-        const byUser = {};
-        tasks.forEach((t) => {
-          const u = t.assigned_to || "Unassigned";
-          (byUser[u] ||= []).push(t);
-        });
-
-        const sortedUsers = Object.keys(byUser).sort(
-          (a, b) => byUser[b].length - byUser[a].length
-        );
-
-        document.getElementById("workloadList").innerHTML = sortedUsers.length
-          ? sortedUsers
-              .map((u) => `<div>${u} — ${byUser[u].length} tasks</div>`)
-              .join("")
-          : "<div>No users</div>";
-
-        renderWorkloadChart(
-          sortedUsers,
-          sortedUsers.map((u) => byUser[u].length)
-        );
-
-        const completedCount = tasks.filter(
-          (t) => t.status === "completed"
-        ).length;
-        renderCompletionChart(completedCount, tasks.length - completedCount);
-
-        /* -------- Task list ---------- */
-        document.getElementById("tasks").innerHTML = tasks
-          .map(
-            (t) => `
-          <div class="task">
-            <b>${t.id}. ${t.title}</b>
-            <div class="meta">
-              Assigned: ${t.assigned_to || "Unassigned"} • Status: ${
-              t.status
-            }
-              • Priority: ${t.priority || "medium"} • Due: ${fmtDate(t.due)}
-            </div>
-            <div style="margin-top:6px;">
-              ${
-                t.status === "completed"
-                  ? `<button class="btn smallbtn danger" data-action="undo" data-id="${t.id}">Undo</button>`
-                  : `<button class="btn smallbtn" data-action="complete" data-id="${t.id}">Complete</button>`
-              }
-            </div>
-          </div>
-        `
-          )
-          .join("");
-
-        document.body.classList.remove("fade");
-        document.getElementById("loader").style.display = "none";
-        document.getElementById("refreshBtn").disabled = false;
-      }
-
-      /* ----------------------------
-          TASK BUTTON HANDLERS
-      ----------------------------- */
-      document
-        .getElementById("tasks")
-        .addEventListener("click", async (e) => {
-          const btn = e.target.closest("button");
-          if (!btn) return;
-
-          const action = btn.dataset.action;
-          const id = btn.dataset.id;
-
-          if (action === "complete") {
-            await fetch("/api/command", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                command: `/complete ${id}`,
-                sender: "dashboard",
-              }),
-            });
-          }
-
-          if (action === "undo") {
-            await fetch("/api/command", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                command: `/undo ${id}`,
-                sender: "dashboard",
-              }),
-            });
-          }
-
-          setTimeout(load, 200);
-        });
-
-      /* ----------------------------
-          REFRESH BUTTON
-      ----------------------------- */
-      document
-        .getElementById("refreshBtn")
-        .addEventListener("click", load);
-
-      /* ----------------------------
-          INITIAL LOAD
-      ----------------------------- */
-      load();
-    </script>
-  </body>
+load();
+</script>
+</body>
 </html>
